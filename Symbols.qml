@@ -28,9 +28,13 @@ Item {
   // A "Symbols" row under Trigger in the Omarchy menu, offered once: the
   // first time the plugin loads it adds the row to the user's menu extension
   // file unless the row is already there, then records the offer, so a row
-  // the user removes stays removed.
-  readonly property string menuExtensionPath: Quickshell.env("HOME") + "/.config/omarchy/extensions/omarchy-menu.jsonc"
+  // the user removes stays removed. The file is read and replaced only
+  // through symbols-menu-entry, which bounds the read at 1 MiB, refuses
+  // anything but a plain file of the user's own, and renames a temp file
+  // into place; the shell never opens the file itself.
   readonly property string menuMarkerPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/omarchy-symbols/menu-entry-offered"
+  property string menuText: ""
+  property string menuWriteBody: ""
 
   property bool opened: false
   property string filterText: ""
@@ -134,8 +138,13 @@ Item {
 
   function offerMenuEntry(raw) {
     var next = MenuEntry.withEntry(raw, root.pluginId)
-    if (next !== null) menuExtension.setText(next)
-    Quickshell.execDetached(["/bin/bash", root.pluginDir + "/symbols-mark-menu-entry"])
+    if (next === null) { markMenuEntry(); return }
+    root.menuWriteBody = next
+    menuWrite.running = true
+  }
+
+  function markMenuEntry() {
+    Quickshell.execDetached(["/bin/bash", root.pluginDir + "/symbols-menu-entry", "mark"])
   }
 
   function toggle() {
@@ -287,16 +296,36 @@ Item {
     path: root.menuMarkerPath
     preload: true
     printErrors: false
-    onLoadFailed: function(error) { menuExtension.path = root.menuExtensionPath }
+    onLoadFailed: function(error) { menuRead.running = true }
   }
 
-  FileView {
-    id: menuExtension
-    path: ""
-    printErrors: false
-    atomicWrites: true
-    onLoaded: root.offerMenuEntry(text())
-    onLoadFailed: function(error) { root.offerMenuEntry("") }
+  Process {
+    id: menuRead
+    command: ["/bin/bash", root.pluginDir + "/symbols-menu-entry", "read"]
+    // The helper prints at most 1 MiB, so this collector is bounded by the
+    // producer. streamFinished arrives before exited.
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.menuText = text }
+    stderr: SplitParser { onRead: function(line) { if (line) console.warn("symbols: " + line) } }
+    onExited: function(code) {
+      // Anything but a clean read means the file is not one to touch (a
+      // link, a FIFO, oversized, not ours); the offer is spent either way.
+      if (code === 0) root.offerMenuEntry(root.menuText)
+      else { console.warn("symbols: menu extension left alone (read exited " + code + ")"); root.markMenuEntry() }
+      root.menuText = ""
+    }
+  }
+
+  Process {
+    id: menuWrite
+    command: ["/bin/bash", root.pluginDir + "/symbols-menu-entry", "write"]
+    stdinEnabled: true
+    onStarted: { menuWrite.write(root.menuWriteBody); menuWrite.stdinEnabled = false }
+    stderr: SplitParser { onRead: function(line) { if (line) console.warn("symbols: " + line) } }
+    onExited: function(code) {
+      if (code !== 0) console.warn("symbols: menu row not added (write exited " + code + ")")
+      root.menuWriteBody = ""
+      root.markMenuEntry()
+    }
   }
 
   Process {

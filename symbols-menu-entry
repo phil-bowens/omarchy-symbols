@@ -1,0 +1,78 @@
+#!/bin/bash
+# The plugin's only access to the Omarchy menu extension file, for the
+# one-time offer of a "Symbols" row. Everything the shell must not do itself
+# happens here: the read is bounded in bytes and refuses anything but a plain
+# file we own, and the write is an atomic replace made relative to the
+# directory once entered, so a swapped path or a symlink cannot redirect it.
+#
+#   read   print the file, at most MAX_BYTES; nothing when there is no file
+#   write  replace the file with stdin (a temp file in the same directory,
+#          then rename); an empty or oversized body writes nothing
+#   mark   record that the offer was made, so it never repeats
+#
+# Exit 0 done, 3 refused (not a regular file, not ours, too large), 1 error.
+# The whole run sits under a timeout.
+set -u
+MAX_BYTES=$((1024 * 1024))
+TIMEOUT_SECONDS=5
+
+if [[ -z ${SYMBOLS_MENU_BOUNDED:-} ]]; then
+  export SYMBOLS_MENU_BOUNDED=1
+  command -v timeout >/dev/null 2>&1 || { echo "symbols-menu-entry: timeout(1) is required" >&2; exit 1; }
+  exec timeout "$TIMEOUT_SECONDS" bash "$0" "$@"
+fi
+
+dir="$HOME/.config/omarchy/extensions"
+name=omarchy-menu.jsonc
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-symbols"
+me=$(id -u)
+
+# Stand inside the extensions directory (creating it if Omarchy has not) and
+# refuse a symlinked or foreign directory. Every path after this is relative
+# to the directory bash holds open, never the pathname again.
+enter() {
+  mkdir -p -- "$dir" 2>/dev/null || return 1
+  [[ -L $dir ]] && return 1
+  cd -P -- "$dir" 2>/dev/null || return 1
+  [[ $(stat -c %u -- . 2>/dev/null) == "$me" ]] || return 1
+}
+
+# The file, if present, must be a plain regular file of ours, not a link.
+plain_file() {
+  [[ -e $name || -L $name ]] || return 0
+  [[ -L $name ]] && return 1
+  [[ -f $name ]] || return 1
+  [[ $(stat -c %u -- "$name" 2>/dev/null) == "$me" ]] || return 1
+}
+
+case "${1:-}" in
+  read)
+    enter || exit 3
+    plain_file || exit 3
+    [[ -e $name ]] || exit 0
+    size=$(stat -c %s -- "$name" 2>/dev/null) || exit 3
+    (( size > MAX_BYTES )) && exit 3
+    head -c "$MAX_BYTES" -- "$name"
+    ;;
+  write)
+    enter || exit 3
+    plain_file || exit 3
+    mode=644
+    [[ -e $name ]] && mode=$(stat -c %a -- "$name" 2>/dev/null || echo 644)
+    tmp=$(mktemp -- "./.$name.XXXXXX") || exit 1
+    trap 'rm -f -- "$tmp"' EXIT
+    head -c $((MAX_BYTES + 1)) >"$tmp" || exit 1
+    size=$(stat -c %s -- "$tmp") || exit 1
+    (( size == 0 || size > MAX_BYTES )) && exit 3
+    chmod -- "$mode" "$tmp" 2>/dev/null
+    mv -fT -- "$tmp" "$name" || exit 1
+    trap - EXIT
+    ;;
+  mark)
+    mkdir -p -- "$state_dir" && : >"$state_dir/menu-entry-offered"
+    ;;
+  *)
+    echo "usage: symbols-menu-entry read|write|mark" >&2
+    exit 2
+    ;;
+esac

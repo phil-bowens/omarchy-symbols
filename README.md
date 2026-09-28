@@ -14,7 +14,39 @@ The curated set comes first: 468 symbols in 18 groups. Behind it sits the rest o
 omarchy plugin add https://github.com/phil-bowens/omarchy-symbols.git --enable
 ```
 
-The first time it loads, the plugin adds a "Symbols" row to the Omarchy menu, under Trigger next to Emoji, by appending one entry to `~/.config/omarchy/extensions/omarchy-menu.jsonc`:
+That is the whole install: no restart, no setup. It needs `wl-clipboard` and `wtype`, which Omarchy ships.
+
+## Open it
+
+Press Super+Space for the Omarchy menu, type `sym`, press Enter. The plugin puts a "Symbols" row in the menu the first time it loads, under Trigger next to Emoji.
+
+For a key, add one line to `~/.config/hypr/bindings.lua`. Hyprland applies it when you save; Super+Ctrl+U is free on a stock install and sits next to Emoji on Super+Ctrl+E:
+
+```lua
+o.bind("SUPER + CTRL + U", "Symbols", "omarchy-shell shell toggle io.github.phil-bowens.symbols")
+```
+
+## Use it
+
+Type to search, move with the arrows, press Enter: the symbol is pasted into the app you were in and stays on the clipboard. Escape closes. Tab walks the groups, or Alt plus the letter on a chip jumps to it. The footer shows the compose sequence for the symbol under the cursor when your compose table has one.
+
+## Remove
+
+```bash
+omarchy plugin remove io.github.phil-bowens.symbols
+```
+
+Then delete the binding line if you added one, and the "Symbols" row from `~/.config/omarchy/extensions/omarchy-menu.jsonc` if you want it gone. The plugin's only other file is a marker under `~/.local/state/omarchy-symbols/`.
+
+## Keys
+
+Type to filter. Arrows or Ctrl+H/J/K/L move, Page Up and Page Down jump a screen, Enter inserts, Escape clears the filter, then the chip, then closes. Click a symbol to insert it, click outside the card to close.
+
+Chips: Tab and Shift+Tab walk them, or press Alt plus the letter shown on the chip. Where a group has an xcompose prefix the letter is that prefix, so Alt+G is Greek, Alt+H math, Alt+K UI, Alt+B box drawing, Alt+U music; the rest take a free letter, Alt+0 is All and Alt+Z is the Unicode long tail. The search text stays as you switch.
+
+## The menu row
+
+The first load appends one entry to `~/.config/omarchy/extensions/omarchy-menu.jsonc`:
 
 ```jsonc
 "trigger.symbols": {
@@ -26,33 +58,13 @@ The first time it loads, the plugin adds a "Symbols" row to the Omarchy menu, un
 }
 ```
 
-It only adds the row when the file has no `trigger.symbols` entry, never changes anything else in the file, and offers it once: delete the row and it stays deleted (the offer is recorded in `~/.local/state/omarchy-symbols/`). Edit the row as you like; it is yours.
+It is added only when the file has no `trigger.symbols` entry and only if the file still reads back with every other entry intact; nothing else in the file changes. The offer happens once, recorded in `~/.local/state/omarchy-symbols/`, so a row you delete stays deleted, and a row you edit is yours.
 
-For a key instead, or as well, bind it in `~/.config/hypr/bindings.lua`, next to the emoji picker:
-
-```lua
-o.bind("SUPER + CTRL + U", "Symbols", "omarchy-shell shell toggle io.github.phil-bowens.symbols")
-```
-
-Needs `wl-clipboard` and `wtype`, which Omarchy ships. No daemon, no timer, no network, no privileges. After an insert, `wl-copy` stays resident only while the symbol is the current selection, as `wl-copy` always does.
-
-## Remove
-
-```bash
-omarchy plugin remove io.github.phil-bowens.symbols
-```
-
-Then delete the binding line if you added one, and the `trigger.symbols` row from the menu extension file if you want it gone. The plugin's only other file is the marker under `~/.local/state/omarchy-symbols/`.
-
-## Keys
-
-Type to filter. Arrows or Ctrl+H/J/K/L move, Page Up and Page Down jump a screen, Enter inserts, Escape clears the filter, then the chip, then closes. Click a symbol to insert it, click outside the card to close.
-
-Chips: Tab and Shift+Tab walk them, or press Alt plus the letter shown on the chip. Where a group has an xcompose prefix the letter is that prefix, so Alt+G is Greek, Alt+H math, Alt+K UI, Alt+B box drawing, Alt+U music; the rest take a free letter, Alt+0 is All and Alt+Z is the Unicode long tail. The search text stays as you switch.
+The shell never opens that file itself. `symbols-menu-entry` reads it (at most 1 MiB, a plain regular file of your own, never a link, FIFO or device, under a 5 second timeout) and replaces it by renaming a temp file created in the same directory, with the directory entered first so a swapped path cannot redirect the write. Anything it refuses leaves the file alone and still spends the offer.
 
 ## How the insert works
 
-The symbol is placed on the clipboard and pasted with Shift+Insert into the window that had focus before the overlay opened, the way Omarchy's emoji picker inserts. It stays on the clipboard and on the primary selection afterward, so it can be pasted again. An app that does not take Shift+Insert as paste gets the clipboard copy and nothing typed.
+The symbol is placed on the clipboard and pasted with Shift+Insert into the window that had focus before the overlay opened, the way Omarchy's emoji picker inserts. It stays on the clipboard and on the primary selection afterward, so it can be pasted again. An app that does not take Shift+Insert as paste gets the clipboard copy and nothing typed. No daemon, no timer, no network, no privileges; after an insert, `wl-copy` stays resident only while the symbol is the current selection, as `wl-copy` always does.
 
 ## Data
 
