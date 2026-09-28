@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.phil-bowens.symbols",
   "name": "Symbols",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Phil Bowens",
   "license": "MIT",
   "description": "Search and insert STEM symbols, and see the compose sequence that types them",

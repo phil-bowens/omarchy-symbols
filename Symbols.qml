@@ -6,6 +6,7 @@ import qs.Commons
 import qs.Ui
 import "symbols.js" as Data
 import "ComposeTable.js" as Compose
+import "MenuEntry.js" as MenuEntry
 
 // A picker for the symbols in xcompose-stem, with the rest of Unicode behind
 // it. It inserts the symbol the same way the emoji picker does, and shows the
@@ -19,6 +20,17 @@ Item {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var shell: null
   property var manifest: null
+  readonly property string pluginId: (manifest && manifest.id) || "io.github.phil-bowens.symbols"
+  // Third-party plugins are always installed here; a plugin is not told
+  // where it lives.
+  readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId
+
+  // A "Symbols" row under Trigger in the Omarchy menu, offered once: the
+  // first time the plugin loads it adds the row to the user's menu extension
+  // file unless the row is already there, then records the offer, so a row
+  // the user removes stays removed.
+  readonly property string menuExtensionPath: Quickshell.env("HOME") + "/.config/omarchy/extensions/omarchy-menu.jsonc"
+  readonly property string menuMarkerPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/omarchy-symbols/menu-entry-offered"
 
   property bool opened: false
   property string filterText: ""
@@ -117,7 +129,13 @@ Item {
   function dismiss() {
     root.opened = false
     if (root.shell && typeof root.shell.hide === "function")
-      root.shell.hide((root.manifest && root.manifest.id) || "io.github.phil-bowens.symbols")
+      root.shell.hide(root.pluginId)
+  }
+
+  function offerMenuEntry(raw) {
+    var next = MenuEntry.withEntry(raw, root.pluginId)
+    if (next !== null) menuExtension.setText(next)
+    Quickshell.execDetached(["/bin/bash", root.pluginDir + "/symbols-mark-menu-entry"])
   }
 
   function toggle() {
@@ -257,20 +275,33 @@ Item {
   function insert(symbol) {
     if (!symbol) return
     root.dismiss()
-    // Third-party plugins are always installed under
-    // ~/.config/omarchy/plugins/<id>/, which is a more dependable way to find
-    // a sibling script than resolving a URL against however the QML was loaded.
-    var id = (root.manifest && root.manifest.id) || "io.github.phil-bowens.symbols"
-    var script = Quickshell.env("HOME") + "/.config/omarchy/plugins/" + id + "/symbols-insert"
-    Quickshell.execDetached(["/bin/bash", script, symbol])
+    Quickshell.execDetached(["/bin/bash", root.pluginDir + "/symbols-insert", symbol])
   }
 
   ListModel { id: displayModel }
 
+  // The offer runs once per install: the marker decides, the extension file
+  // is only read when there is no marker yet.
+  FileView {
+    id: menuMarker
+    path: root.menuMarkerPath
+    preload: true
+    printErrors: false
+    onLoadFailed: function(error) { menuExtension.path = root.menuExtensionPath }
+  }
+
+  FileView {
+    id: menuExtension
+    path: ""
+    printErrors: false
+    atomicWrites: true
+    onLoaded: root.offerMenuEntry(text())
+    onLoadFailed: function(error) { root.offerMenuEntry("") }
+  }
+
   Process {
     id: composeProc
-    command: ["/bin/bash", Quickshell.env("HOME") + "/.config/omarchy/plugins/"
-      + ((root.manifest && root.manifest.id) || "io.github.phil-bowens.symbols") + "/compose-dump"]
+    command: ["/bin/bash", root.pluginDir + "/compose-dump"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {

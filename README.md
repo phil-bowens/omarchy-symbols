@@ -14,7 +14,21 @@ The curated set comes first: 468 symbols in 18 groups. Behind it sits the rest o
 omarchy plugin add https://github.com/phil-bowens/omarchy-symbols.git --enable
 ```
 
-Then bind it, for example in `~/.config/hypr/bindings.lua`, next to the emoji picker:
+The first time it loads, the plugin adds a "Symbols" row to the Omarchy menu, under Trigger next to Emoji, by appending one entry to `~/.config/omarchy/extensions/omarchy-menu.jsonc`:
+
+```jsonc
+"trigger.symbols": {
+  "icon": "∑",
+  "label": "Symbols",
+  "aliases": ["symbols", "symbol", "greek", "math", "arrows", "compose"],
+  "description": "Search and insert STEM symbols, with the compose sequence that types them",
+  "action": "omarchy-shell shell toggle io.github.phil-bowens.symbols"
+}
+```
+
+It only adds the row when the file has no `trigger.symbols` entry, never changes anything else in the file, and offers it once: delete the row and it stays deleted (the offer is recorded in `~/.local/state/omarchy-symbols/`). Edit the row as you like; it is yours.
+
+For a key instead, or as well, bind it in `~/.config/hypr/bindings.lua`, next to the emoji picker:
 
 ```lua
 o.bind("SUPER + CTRL + U", "Symbols", "omarchy-shell shell toggle io.github.phil-bowens.symbols")
@@ -28,7 +42,7 @@ Needs `wl-clipboard` and `wtype`, which Omarchy ships. No daemon, no timer, no n
 omarchy plugin remove io.github.phil-bowens.symbols
 ```
 
-Then delete the binding line. The plugin keeps no files of its own outside its folder.
+Then delete the binding line if you added one, and the `trigger.symbols` row from the menu extension file if you want it gone. The plugin's only other file is the marker under `~/.local/state/omarchy-symbols/`.
 
 ## Keys
 

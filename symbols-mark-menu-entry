@@ -1,0 +1,6 @@
+#!/bin/bash
+# Remember that the menu entry was offered once, so a row the user deletes
+# from ~/.config/omarchy/extensions/omarchy-menu.jsonc stays deleted.
+set -u
+dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-symbols"
+mkdir -p "$dir" && : >"$dir/menu-entry-offered"
