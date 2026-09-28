@@ -57,11 +57,31 @@ fi
 mkfifo "$HOME/extra/pipe.XCompose"
 truncate -s 9M "$HOME/extra/huge.XCompose"
 printf '<Multi_key> <h> <g> : "huge"\n' >>"$HOME/extra/huge.XCompose"
-awk 'BEGIN { for (i = 0; i < 100010; i++) printf "<Multi_key> <m> <%d> : \"m\"\n", i }' >"$HOME/extra/many.XCompose"
+# About 4.8 MB of table, past the 4 MiB output cap.
+awk 'BEGIN { pad = sprintf("%90s", ""); for (i = 0; i < 40000; i++) printf "<Multi_key> <m> <%d> : \"m\" # %s\n", i, pad }' >"$HOME/extra/many.XCompose"
 printf 'include "%%H/extra/pipe.XCompose"\ninclude "%%H/extra/huge.XCompose"\n<Multi_key> <a> <b> : "after"\n' >"$HOME/.XCompose"
 bash "$ROOT/compose-dump" >"$out" 2>"$tmp/err"
 assert 'an included FIFO is skipped and the dump still finishes' grep -q '"after"' "$out"
 assert_equal "$(grep -c '"huge"' "$out")" '0' 'a file over the size cap is not read'
 assert 'the skipped file is named on stderr' grep -q 'huge.XCompose' "$tmp/err"
-bash "$ROOT/compose-dump" "$HOME/extra/many.XCompose" >"$out"
-assert_equal "$(wc -l <"$out" | tr -d ' ')" '100000' 'output stops at the line cap'
+rc=0; bash "$ROOT/compose-dump" "$HOME/extra/many.XCompose" >"$out" || rc=$?
+assert_equal "$rc" '0' 'a table past the output cap still exits cleanly'
+assert 'total output stops at the byte cap' test "$(wc -c <"$out")" -le $((4 * 1024 * 1024))
+assert 'and the cap was actually reached' test "$(wc -c <"$out")" -ge $((4 * 1024 * 1024 - 200))
+
+# A symlink to an oversized file is measured on its target, not the link.
+ln -s "$HOME/extra/huge.XCompose" "$HOME/extra/link.XCompose"
+printf 'include "%%H/extra/link.XCompose"\n<Multi_key> <o> <k> : "ok"\n' >"$HOME/.XCompose"
+bash "$ROOT/compose-dump" >"$out" 2>"$tmp/err"
+assert_equal "$(grep -c '"huge"' "$out")" '0' 'an oversized file behind a symlink is not read'
+assert 'the symlinked file is named on stderr' grep -q 'link.XCompose' "$tmp/err"
+
+# A file within the size check that then grows, or holds one enormous line,
+# still yields no more than the per-file cap.
+head -c $((3 * 1024 * 1024)) /dev/zero | tr '\0' 'x' >"$HOME/extra/longline.XCompose"
+printf ' : "x"\n<Multi_key> <l> <l> : "long"\n' >>"$HOME/extra/longline.XCompose"
+bash "$ROOT/compose-dump" "$HOME/extra/longline.XCompose" >"$out"
+assert 'a file with one enormous line is read through the per-file cap' grep -q '"long"' "$out"
+truncate -s 5M "$HOME/extra/grow.XCompose"; printf '<Multi_key> <g> <r> : "grow"\n' >>"$HOME/extra/grow.XCompose"
+bash "$ROOT/compose-dump" "$HOME/extra/grow.XCompose" >"$out"
+assert_equal "$(grep -c '"grow"' "$out")" '1' 'a sparse file under the cap is read to its end'
