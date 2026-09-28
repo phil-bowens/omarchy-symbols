@@ -1,0 +1,24 @@
+#!/bin/bash
+# Copy a symbol to the clipboard and paste it into the window that had focus
+# before the picker opened.
+#
+# The paste is served by a foreground wl-copy, the way Omarchy's emoji insert
+# does it: a wl-copy left to fork itself into the background has been seen to
+# die before the paste lands. Afterward the symbol is offered again from a
+# detached wl-copy so it stays on the clipboard, and on the primary selection
+# for terminals that paste that on Shift+Insert. --type text/plain is needed
+# because wl-copy infers a single ASCII byte as application/octet-stream and
+# then nothing pastes. The last two points come from EFrMG's Unicode picker.
+symbol="${1:-}"
+[[ -n $symbol ]] || exit 0
+
+printf '%s' "$symbol" | wl-copy --type text/plain --foreground &
+serve=$!
+# Let the picker's layer surface release keyboard focus before the keystroke.
+sleep 0.15
+wtype -M shift -k Insert -m shift 2>/dev/null || true
+sleep 0.2
+kill "$serve" 2>/dev/null || true
+
+printf '%s' "$symbol" | setsid -f wl-copy --type text/plain
+printf '%s' "$symbol" | setsid -f wl-copy --primary --type text/plain

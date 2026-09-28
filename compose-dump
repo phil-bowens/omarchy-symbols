@@ -1,0 +1,40 @@
+#!/bin/bash
+# Print every compose sequence line that is active for this user: the file
+# XCOMPOSEFILE points at (default ~/.XCompose), with its include lines followed
+# the way libX11 and fcitx5 follow them. %L is the system table for the
+# current locale, %H the home directory, %S the X11 locale root. When the
+# user has no compose file at all, the system table alone is active.
+#
+# Usage: compose-dump [file]
+set -u
+LOCALE_ROOT=/usr/share/X11/locale
+
+system_table() {
+  local loc="${LC_ALL:-${LC_CTYPE:-${LANG:-en_US.UTF-8}}}"
+  local dir
+  dir=$(awk -v l="$loc" '$2 == l { sub(/\/Compose$/, "", $1); print $1; exit }' "$LOCALE_ROOT/compose.dir" 2>/dev/null)
+  [[ -n $dir && -f $LOCALE_ROOT/$dir/Compose ]] && { echo "$LOCALE_ROOT/$dir/Compose"; return; }
+  echo "$LOCALE_ROOT/en_US.UTF-8/Compose"
+}
+
+declare -A seen
+dump() {
+  local file="$1" depth="$2"
+  [[ -f $file && $depth -lt 8 && -z ${seen[$file]:-} ]] || return 0
+  seen[$file]=1
+  local line target
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line =~ ^[[:space:]]*include[[:space:]]+\"([^\"]+)\" ]]; then
+      target="${BASH_REMATCH[1]}"
+      target="${target//%L/$(system_table)}"
+      target="${target//%H/$HOME}"
+      target="${target//%S/$LOCALE_ROOT}"
+      dump "$target" $((depth + 1))
+    elif [[ $line == *"<Multi_key>"*":"* ]]; then
+      printf '%s\n' "$line"
+    fi
+  done <"$file"
+}
+
+start="${1:-${XCOMPOSEFILE:-$HOME/.XCompose}}"
+if [[ -f $start ]]; then dump "$start" 0; else dump "$(system_table)" 0; fi

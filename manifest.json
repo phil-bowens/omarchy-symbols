@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.phil-bowens.symbols",
+  "name": "Symbols",
+  "version": "1.0.0",
+  "author": "Phil Bowens",
+  "license": "MIT",
+  "description": "Search and insert STEM symbols, and see the compose sequence that types them",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Symbols.qml"
+  }
+}
