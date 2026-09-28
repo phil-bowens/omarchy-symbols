@@ -51,3 +51,17 @@ if [[ -f /usr/share/X11/locale/compose.dir ]]; then
 else
   pass '%L expansion skipped: no X11 locale tables here # SKIP'
 fi
+
+
+# --- bounds: special files are skipped, oversized files are skipped, output is capped ---
+mkfifo "$HOME/extra/pipe.XCompose"
+truncate -s 9M "$HOME/extra/huge.XCompose"
+printf '<Multi_key> <h> <g> : "huge"\n' >>"$HOME/extra/huge.XCompose"
+awk 'BEGIN { for (i = 0; i < 100010; i++) printf "<Multi_key> <m> <%d> : \"m\"\n", i }' >"$HOME/extra/many.XCompose"
+printf 'include "%%H/extra/pipe.XCompose"\ninclude "%%H/extra/huge.XCompose"\n<Multi_key> <a> <b> : "after"\n' >"$HOME/.XCompose"
+bash "$ROOT/compose-dump" >"$out" 2>"$tmp/err"
+assert 'an included FIFO is skipped and the dump still finishes' grep -q '"after"' "$out"
+assert_equal "$(grep -c '"huge"' "$out")" '0' 'a file over the size cap is not read'
+assert 'the skipped file is named on stderr' grep -q 'huge.XCompose' "$tmp/err"
+bash "$ROOT/compose-dump" "$HOME/extra/many.XCompose" >"$out"
+assert_equal "$(wc -l <"$out" | tr -d ' ')" '100000' 'output stops at the line cap'

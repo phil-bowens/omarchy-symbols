@@ -6,8 +6,20 @@
 # user has no compose file at all, the system table alone is active.
 #
 # Usage: compose-dump [file]
+#
+# Bounds: only regular files, none larger than MAX_FILE_BYTES, at most
+# MAX_LINES of output, include depth 8, and the whole run under a timeout.
+# The output is collected whole by the shell, so the producer keeps it small.
 set -u
 LOCALE_ROOT=/usr/share/X11/locale
+MAX_FILE_BYTES=$((8 * 1024 * 1024))
+MAX_LINES=100000
+TIMEOUT_SECONDS=5
+
+if [[ -z ${COMPOSE_DUMP_BOUNDED:-} ]] && command -v timeout >/dev/null 2>&1; then
+  export COMPOSE_DUMP_BOUNDED=1
+  exec timeout "$TIMEOUT_SECONDS" "$0" "$@"
+fi
 
 system_table() {
   local loc="${LC_ALL:-${LC_CTYPE:-${LANG:-en_US.UTF-8}}}"
@@ -18,12 +30,26 @@ system_table() {
 }
 
 declare -A seen
+emitted=0
+
+# A regular file, not a FIFO, device or socket (-f follows symlinks and is
+# false for all of those), and not larger than the cap.
+readable_table() {
+  local file="$1" size
+  [[ -f $file ]] || return 1
+  size=$(stat -c %s -- "$file" 2>/dev/null) || return 1
+  (( size <= MAX_FILE_BYTES )) || { echo "compose-dump: skipping $file, larger than $MAX_FILE_BYTES bytes" >&2; return 1; }
+  return 0
+}
+
 dump() {
   local file="$1" depth="$2"
-  [[ -f $file && $depth -lt 8 && -z ${seen[$file]:-} ]] || return 0
+  [[ $depth -lt 8 && -z ${seen[$file]:-} ]] || return 0
+  readable_table "$file" || return 0
   seen[$file]=1
   local line target
   while IFS= read -r line || [[ -n $line ]]; do
+    (( emitted < MAX_LINES )) || return 0
     if [[ $line =~ ^[[:space:]]*include[[:space:]]+\"([^\"]+)\" ]]; then
       target="${BASH_REMATCH[1]}"
       target="${target//%L/$(system_table)}"
@@ -32,6 +58,7 @@ dump() {
       dump "$target" $((depth + 1))
     elif [[ $line == *"<Multi_key>"*":"* ]]; then
       printf '%s\n' "$line"
+      emitted=$((emitted + 1))
     fi
   done <"$file"
 }

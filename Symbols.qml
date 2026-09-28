@@ -270,7 +270,9 @@ Item {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        var parsed = Compose.parse(text)
+        // compose-dump bounds its own output; this is the belt to its braces,
+        // so a runaway producer can never hand the shell an unbounded string.
+        var parsed = Compose.parse(text.length > 8000000 ? text.slice(0, 8000000) : text)
         root.active = parsed.bySymbol
         root.activeCount = parsed.count
         root.activeLoaded = true
