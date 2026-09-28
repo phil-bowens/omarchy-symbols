@@ -85,3 +85,24 @@ assert 'a file with one enormous line is read through the per-file cap' grep -q 
 truncate -s 5M "$HOME/extra/grow.XCompose"; printf '<Multi_key> <g> <r> : "grow"\n' >>"$HOME/extra/grow.XCompose"
 bash "$ROOT/compose-dump" "$HOME/extra/grow.XCompose" >"$out"
 assert_equal "$(grep -c '"grow"' "$out")" '1' 'a sparse file under the cap is read to its end'
+
+# --- depth: includes nest at most 8 deep ---
+for d in $(seq 0 10); do
+  { (( d < 10 )) && printf 'include "%%H/extra/depth%d.XCompose"\n' $((d + 1)); printf '<Multi_key> <d> <%d> : "depth%d"\n' "$d" "$d"; } >"$HOME/extra/depth$d.XCompose"
+done
+bash "$ROOT/compose-dump" "$HOME/extra/depth0.XCompose" >"$out"
+assert 'the eighth level of includes is read' grep -q '"depth7"' "$out"
+assert_equal "$(grep -c '"depth8"' "$out")" '0' 'the ninth level is not'
+
+# --- SIGPIPE ignored, as under the shell's systemd unit: the cap still ends the run promptly ---
+start=$SECONDS
+rc=0; (trap "" PIPE; bash "$ROOT/compose-dump" "$HOME/extra/many.XCompose" >"$out") || rc=$?
+assert_equal "$rc" '0' 'with SIGPIPE ignored the dump still exits cleanly at the cap'
+assert 'and does not keep reading past it' test $((SECONDS - start)) -lt 8
+
+# --- a copy without the executable bit still works ---
+cp "$ROOT/compose-dump" "$tmp/compose-dump-noexec"; chmod -x "$tmp/compose-dump-noexec"
+printf '<Multi_key> <n> <x> : "noexec"\n' >"$HOME/.XCompose"
+bash "$tmp/compose-dump-noexec" >"$out"
+assert 'a non-executable copy of the script still dumps' grep -q '"noexec"' "$out"
+

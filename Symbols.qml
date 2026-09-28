@@ -40,6 +40,10 @@ Item {
   property var active: ({})
   property int activeCount: 0
   property bool activeLoaded: false
+  // True when compose-dump stopped at its output cap or its deadline, so the
+  // footer can say the table was cut rather than claim a symbol has no sequence.
+  property bool activeTruncated: false
+  readonly property int composeOutputCap: 4194304
 
   readonly property string unicodeChip: "Unicode"
   readonly property string allKey: "0"
@@ -162,7 +166,7 @@ Item {
     var out = []
     for (var i = 0; i < root.unicode.length && out.length < root.resultCap; i++) {
       var item = root.unicode[i]
-      if (item && item.e && keywordsMatch(item.k, words)) out.push(unicodeEntry(item))
+      if (item && typeof item.e === "string" && typeof item.k === "string" && keywordsMatch(item.k, words)) out.push(unicodeEntry(item))
     }
     return out
   }
@@ -271,12 +275,26 @@ Item {
       waitForEnd: true
       onStreamFinished: {
         // compose-dump caps its own output at 4 MiB before it reaches the
-        // collector, so this string is bounded by the producer, not here.
-        var parsed = Compose.parse(text)
-        root.active = parsed.bySymbol
-        root.activeCount = parsed.count
+        // collector, so this string is bounded by the producer, not here. A
+        // string at the cap is a cut table.
+        root.activeTruncated = text.length >= root.composeOutputCap
+        try {
+          var parsed = Compose.parse(text)
+          root.active = parsed.bySymbol
+          root.activeCount = parsed.count
+        } catch (e) {
+          console.warn("symbols: compose table unreadable: " + e)
+          root.active = ({})
+          root.activeCount = 0
+        }
         root.activeLoaded = true
       }
+    }
+    stderr: SplitParser { onRead: function(line) { if (line) console.warn("symbols: " + line) } }
+    onExited: function(code) {
+      // 124 is the deadline, anything else non-zero a run that did not
+      // finish; either way the table is partial, not authoritative.
+      if (code !== 0) { root.activeTruncated = true; console.warn("symbols: compose-dump exited " + code) }
     }
   }
 
@@ -289,7 +307,13 @@ Item {
     // The path is only set once the long tail is wanted, which is what
     // makes the load lazy; FileView reads it as soon as it has a path.
     path: root.unicodeWanted || root.unicodeLoaded ? Qt.resolvedUrl("unicode.json").toString() : ""
-    onLoadFailed: function(error) { console.warn("symbols: unicode.json failed to load: " + error) }
+    onLoadFailed: function(error) {
+      // Without the file the long tail is simply empty, not "loading" forever.
+      console.warn("symbols: unicode.json failed to load: " + error)
+      root.unicode = []
+      root.unicodeLoaded = true
+      if (root.unicodeWanted) { root.unicodeWanted = false; root.rebuildDisplay() }
+    }
     onLoaded: {
       try {
         var data = JSON.parse(text())
@@ -543,7 +567,8 @@ Item {
               textFormat: Text.PlainText
               text: !root.current ? ""
                 : root.active[root.current.e] ? "Compose " + root.active[root.current.e]
-                : (root.activeLoaded ? "no compose sequence" : "")
+                : !root.activeLoaded ? ""
+                : root.activeTruncated ? "compose table cut short" : "no compose sequence"
               color: root.current && root.active[root.current.e] ? root.selectedText : root.foreground
               opacity: root.current && root.active[root.current.e] ? 1 : 0.5
               font.family: root.fontFamily

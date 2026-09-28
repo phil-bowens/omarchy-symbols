@@ -21,14 +21,14 @@ TIMEOUT_SECONDS=10
 
 if [[ -z ${COMPOSE_DUMP_BOUNDED:-} ]]; then
   export COMPOSE_DUMP_BOUNDED=1
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$TIMEOUT_SECONDS" "$0" "$@" | head -c "$MAX_OUTPUT_BYTES"
-  else
-    "$0" "$@" | head -c "$MAX_OUTPUT_BYTES"
-  fi
+  # No deadline available means no dump: the shell must never wait on this.
+  command -v timeout >/dev/null 2>&1 || { echo "compose-dump: timeout(1) is required" >&2; exit 1; }
+  # bash "$0" rather than "$0": the copy in a plugin folder may have lost +x.
+  timeout "$TIMEOUT_SECONDS" bash "$0" "$@" | head -c "$MAX_OUTPUT_BYTES"
   rc=${PIPESTATUS[0]}
-  # Reaching the output cap ends the producer with SIGPIPE; that is the bound
-  # working, not a failure. A timeout (124) stays visible.
+  # Reaching the output cap is the bound working, not a failure: the inner
+  # run stops itself on the first failed write (see dump), and where SIGPIPE
+  # is delivered it reports 141. A timeout (124) stays visible.
   [[ $rc -eq 141 ]] && rc=0
   exit "$rc"
 fi
@@ -65,15 +65,21 @@ dump() {
   while IFS= read -r line || [[ -n $line ]]; do
     if [[ $line =~ ^[[:space:]]*include[[:space:]]+\"([^\"]+)\" ]]; then
       target="${BASH_REMATCH[1]}"
-      target="${target//%L/$(system_table)}"
+      target="${target//%L/$SYSTEM_TABLE}"
       target="${target//%H/$HOME}"
       target="${target//%S/$LOCALE_ROOT}"
       dump "$target" $((depth + 1))
     elif [[ $line == *"<Multi_key>"*":"* ]]; then
-      printf '%s\n' "$line"
+      # A failed write means the consumer has taken its fill (the output cap
+      # closed the pipe). Stop here; under systemd SIGPIPE is ignored, so the
+      # write error is the only signal.
+      printf '%s\n' "$line" 2>/dev/null || exit 0
     fi
-  done < <(head -c "$MAX_FILE_BYTES" -- "$file")
+  done < <(head -c "$MAX_FILE_BYTES" -- "$file" 2>/dev/null)
 }
+
+# The system table's path is the same for every include line; look it up once.
+SYSTEM_TABLE=$(system_table)
 
 start="${1:-${XCOMPOSEFILE:-$HOME/.XCompose}}"
 if [[ -f $start ]]; then dump "$start" 0; else dump "$(system_table)" 0; fi

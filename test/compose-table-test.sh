@@ -50,7 +50,16 @@ assertEqual(compose.decodeString('\\360\\237\\230\\200'), '😀', 'four-byte seq
 assertEqual(compose.decodeString('\\303'), 'Ã', 'a run that is not UTF-8 is read as Latin-1')
 assertEqual(compose.decodeString('\\240'), '\u00a0', 'a Latin-1 table\'s no-break space still decodes')
 
-assertDeepEqual(compose.parse(''), { bySymbol: {}, count: 0 }, 'empty input is an empty table')
+assertEqual(Object.keys(compose.parse('').bySymbol).length, 0, 'empty input is an empty table')
+assertEqual(compose.parse('').count, 0, 'and counts nothing')
+
+// Results that collide with object prototype names are just keys.
+const hostile = compose.parse('<Multi_key> <c> : "constructor"\n<Multi_key> <p> : "__proto__"\n<Multi_key> <h> : "hasOwnProperty"\n<Multi_key> <t> : "toString"\n')
+assertEqual(hostile.bySymbol['constructor'], 'c', 'a result named constructor is an ordinary entry')
+assertEqual(hostile.bySymbol['__proto__'], 'p', 'a result named __proto__ is an ordinary entry')
+assertEqual(hostile.count, 4, 'all four hostile results are counted')
+assertEqual(compose.decodeString('\\364\\220\\200\\200'), 'ô\u0090\u0080\u0080', 'a sequence past U+10FFFF is not UTF-8 and falls back to Latin-1 without throwing')
+assert(typeof compose.decodeString('\\355\\240\\200') === 'string', 'a surrogate encoded as UTF-8 decodes to a string without throwing')
 assertDeepEqual(compose.parse('garbage without a colon'), { bySymbol: {}, count: 0 }, 'unparseable lines are skipped')
 
 // Later definitions of the same sequence override earlier ones, as libX11 does.

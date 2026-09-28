@@ -39,6 +39,7 @@ function utf8Decode(bytes) {
       if ((cont & 0xc0) !== 0x80) return null
       cp = (cp << 6) | (cont & 0x3f)
     }
+    if (cp > 0x10ffff) return null
     out += String.fromCodePoint(cp)
     i += n + 1
   }
@@ -72,7 +73,9 @@ function decodeString(raw) {
 
 // Returns { bySymbol: { symbol: "g a", ... }, count: N }
 function parse(text) {
-  var bySequence = {}
+  // Maps keyed by strings from the user's table: no prototype, so a result
+  // of "constructor" or "__proto__" is just another key.
+  var bySequence = Object.create(null)
   var lines = String(text || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
     var m = LINE.exec(lines[i])
@@ -85,7 +88,7 @@ function parse(text) {
     if (!symbol) continue
     bySequence[keys.join(" ")] = symbol
   }
-  var bySymbol = {}
+  var bySymbol = Object.create(null)
   var count = 0
   for (var seq in bySequence) {
     var sym = bySequence[seq]
@@ -96,7 +99,7 @@ function parse(text) {
     if (!have || keyCount < have.length || (keyCount === have.length && shown.length < have.shown.length))
       bySymbol[sym] = { shown: shown, length: keyCount }
   }
-  var out = {}
+  var out = Object.create(null)
   for (var s in bySymbol) out[s] = bySymbol[s].shown
   return { bySymbol: out, count: count }
 }
